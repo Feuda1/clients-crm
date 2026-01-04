@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum ServiceStatus {
+  ACTIVE
+  CLOSED
+  NO_CONTRACT
+  LEFT
+  SEASONAL
+  LAUNCHING
+  DEBT
+}
+
+model User {
+  id          String  @id @default(cuid())
+  login       String  @unique
+  password    String
+  name        String
+  avatar      String?
+  permissions String  @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdContractors Contractor[] @relation("ContractorCreatedBy")
+  managedContractors Contractor[] @relation("ContractorManager")
+
+  authoredSuggestions ContractorSuggestion[] @relation("SuggestionAuthor")
+  reviewedSuggestions ContractorSuggestion[] @relation("SuggestionReviewer")
+}
+
+// КОНТРАГЕНТ (Юридическое лицо)
+model Contractor {
+  id       String        @id @default(cuid())
+  name     String // Официальное название (юридическое)
+  inn      String // ИНН
+  hasChain Boolean       @default(false) // Входит в сеть заведений
+  status   ServiceStatus @default(ACTIVE)
+  isHidden Boolean       @default(false) // Скрыт из списков
+
+  // Описание и примечания
+  generalDescription     String? // Описание для менеджеров
+  generalNotes           String? // Важные пометки
+  generalIndividualTerms String? // Особые условия договора
+
+  // Ответственные лица
+  createdById String
+  createdBy   User    @relation("ContractorCreatedBy", fields: [createdById], references: [id])
+  managerId   String?
+  manager     User?   @relation("ContractorManager", fields: [managerId], references: [id])
+
+  // Привязки
+  primaryCityId String?
+  primaryCity   City?      @relation(fields: [primaryCityId], references: [id])
+  agreementId   String?
+  agreement     Agreement? @relation(fields: [agreementId], references: [id])
+
+  // Структура
+  servicePoints ServicePoint[]
+  files         ContractorFile[]
+  suggestions   ContractorSuggestion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([inn])
+  @@index([status])
+  @@index([managerId])
+  @@index([createdById])
+  @@index([primaryCityId])
+  @@index([agreementId])
+}
+
+// ТОЧКА ОБСЛУЖИВАНИЯ (Филиал / Заведение)
+model ServicePoint {
+  id           String     @id @default(cuid())
+  contractorId String
+  contractor   Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  name    String // Название на вывеске
+  address String? // Фактический адрес
+  crmId   String? // ID в старой CRM
+
+  // Город расположения
+  cityId String?
+  city   City?   @relation(fields: [cityId], references: [id])
+
+  // Оборудование (Кассы)
+  frontsCount     Int @default(0) // Всего рабочих мест
+  frontsOnService Int @default(0) // Из них на поддержке
+
+  // Специфика точки
+  description     String? // Как найти / особенности
+  notes           String? // Заметки инженера
+  individualTerms String? // Условия для этого филиала
+
+  // Связи
+  addons ServicePointAddon[]
+  files  ServicePointFile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([contractorId])
+  @@index([cityId])
+  @@index([name])
+}
+
+// ДОПОЛНЕНИЯ
+model Addon {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  color       String? // Цвет для отображения
+  icon        String? // Имя иконки
+
+  servicePoints ServicePointAddon[]
+
+  createdAt DateTime @default(now())
+}
+
+// Подключенные услуги на точке (many-to-many)
+model ServicePointAddon {
+  servicePointId String
+  servicePoint   ServicePoint @relation(fields: [servicePointId], references: [id], onDelete: Cascade)
+  addonId        String
+  addon          Addon        @relation(fields: [addonId], references: [id], onDelete: Cascade)
+
+  addedAt DateTime @default(now())
+
+  @@id([servicePointId, addonId])
+}
+
+// ФАЙЛЫ
+
+// Документы контрагента
+model ContractorFile {
+  id           String     @id @default(cuid())
+  contractorId String
+  contractor   Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  filename    String // Имя файла при загрузке
+  storagePath String // Путь в хранилище
+  fileType    String // image, document, video
+  mimeType    String // MIME тип
+  size        Int // Размер в байтах
+
+  // Для системы предложений
+  isPending    Boolean               @default(false)
+  suggestionId String?
+  suggestion   ContractorSuggestion? @relation(fields: [suggestionId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([contractorId])
+  @@index([suggestionId])
+}
+
+// Файлы точки обслуживания
+model ServicePointFile {
+  id             String       @id @default(cuid())
+  servicePointId String
+  servicePoint   ServicePoint @relation(fields: [servicePointId], references: [id], onDelete: Cascade)
+
+  filename    String // Имя файла при загрузке
+  storagePath String // Путь в хранилище
+  fileType    String // image, document, video
+  mimeType    String // MIME тип
+  size        Int // Размер в байтах
+
+  // Для системы предложений
+  isPending    Boolean               @default(false)
+  suggestionId String?
+  suggestion   ContractorSuggestion? @relation(fields: [suggestionId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([servicePointId])
+  @@index([suggestionId])
+}
+
+// СПРАВОЧНИКИ
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  permissions String // Список прав доступа (JSON)
+  description String?
+  color       String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model City {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  contractors   Contractor[] // Основной город контрагента
+  servicePoints ServicePoint[] // Город расположения точки
+  createdAt     DateTime       @default(now())
+}
+
+model Agreement {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  contractors Contractor[]
+  createdAt   DateTime     @default(now())
+}
+
+// СИСТЕМА СОГЛАСОВАНИЯ ПРАВОК
+enum SuggestionStatus {
+  PENDING // На проверке
+  APPROVED // Утверждено
+  REJECTED // Отказано
+}
+
+model ContractorSuggestion {
+  id           String     @id @default(cuid())
+  contractorId String
+  contractor   Contractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation("SuggestionAuthor", fields: [authorId], references: [id])
+
+  // История предложений (JSON)
+  changes String
+  comment String?
+
+  status        SuggestionStatus @default(PENDING)
+  reviewedById  String?
+  reviewedBy    User?            @relation("SuggestionReviewer", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  reviewComment String?
+
+  // Файлы, связанные с предложением
+  files             ContractorFile[]
+  servicePointFiles ServicePointFile[]
+
+  createdAt DateTime @default(now())
+
+  @@index([contractorId])
+  @@index([authorId])
+  @@index([status])
+}
