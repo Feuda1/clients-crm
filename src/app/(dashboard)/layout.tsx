@@ -20,7 +20,7 @@ export default function DashboardLayout({
     useEffect(() => {
         const updateWidth = () => {
             const saved = localStorage.getItem("sidebar-collapsed");
-            setSidebarWidth(saved === "true" ? 64 : 240);
+            setSidebarWidth(saved === "false" ? 240 : 64);
         };
 
         updateWidth();
